@@ -47,6 +47,10 @@ if [ -z "$CONFIG_LIST" ]; then
     exit 1
 fi
 
+SUCCESS_COUNT=0
+FAIL_COUNT=0
+FAILED_CONFIGS=""
+
 for cfg_file in $CONFIG_LIST; do
     cfg_name=$(basename "$cfg_file")
     cfg_base=${cfg_name%.config}
@@ -60,17 +64,46 @@ for cfg_file in $CONFIG_LIST; do
     cp -f "$cfg_file" "$ATF_DIR/build/.config"
     echo "Starting build for $cfg_name ..."
     echo "----------------------------------------"
-    make -C "$ATF_DIR" -f "$ATF_MKFILE" CROSS_COMPILE="$TOOLCHAIN" -j $(nproc)
-
-    if [ -f "$ATF_DIR/build/${soc}/release/bl2.bin" ]; then
-        out_name="${cfg_base}.bl2.bin"
-        cp -f "$ATF_DIR/build/${soc}/release/bl2.bin" "$OUTPUT_DIR/$out_name"
-        echo "$out_name build done"
-        echo "----------------------------------------"
-    else
-        echo "bl2 build fail for $cfg_name!"
-        echo "----------------------------------------"
-        exit 1
+    build_ok=1
+    make -C "$ATF_DIR" olddefconfig || build_ok=0
+    make -C "$ATF_DIR" -f "$ATF_MKFILE" clean CONFIG_CROSS_COMPILER="$TOOLCHAIN" CROSS_COMPILER="$TOOLCHAIN" || build_ok=0
+    if [ "$build_ok" = "1" ]; then
+        make -C "$ATF_DIR" -f "$ATF_MKFILE" all CONFIG_CROSS_COMPILER="$TOOLCHAIN" CROSS_COMPILER="$TOOLCHAIN" -j $(nproc) || build_ok=0
     fi
 
+    if [ "$build_ok" = "1" ] && [ -f "$ATF_DIR/build/${soc}/release/bl2.img" ]; then
+        src_file="$ATF_DIR/build/${soc}/release/bl2.img"
+        bl2_md5=$(md5sum "$src_file" | awk '{print $1}')
+        out_name="bl2-${cfg_base}-Yuzhii_md5-${bl2_md5}.img"
+        cp -f "$src_file" "$OUTPUT_DIR/$out_name"
+        echo "$out_name build done"
+        echo "----------------------------------------"
+        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+    elif [ "$build_ok" = "1" ] && [ -f "$ATF_DIR/build/${soc}/release/bl2.bin" ]; then
+        src_file="$ATF_DIR/build/${soc}/release/bl2.bin"
+        bl2_md5=$(md5sum "$src_file" | awk '{print $1}')
+        out_name="bl2-${cfg_base}-Yuzhii_md5-${bl2_md5}.bin"
+        cp -f "$src_file" "$OUTPUT_DIR/$out_name"
+        echo "Warning: bl2.img not found, fallback to bl2.bin"
+        echo "$out_name build done"
+        echo "----------------------------------------"
+        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+    else
+        echo "bl2 build fail for $cfg_name! (neither bl2.img nor bl2.bin found)"
+        echo "----------------------------------------"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        FAILED_CONFIGS="$FAILED_CONFIGS $cfg_name"
+    fi
 done
+
+echo "Build summary: success=$SUCCESS_COUNT, failed=$FAIL_COUNT"
+if [ "$FAIL_COUNT" -gt 0 ]; then
+    echo "Failed configs:$FAILED_CONFIGS"
+fi
+
+if [ "$SUCCESS_COUNT" -eq 0 ]; then
+    echo "Error: all BL2 builds failed."
+    exit 1
+fi
+
+echo "At least one BL2 build succeeded, continue workflow."

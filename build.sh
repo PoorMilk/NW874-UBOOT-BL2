@@ -288,7 +288,7 @@ fi
 
 mkdir -p "output"
 if [ -f "$ATF_DIR/build/${SOC}/release/fip.bin" ]; then
-	FIP_NAME="${SOC}_${BOARD}_${VERSION}-${AUTHOR}-dhcpd-fip"
+	FIP_NAME="fip-${SOC}_${BOARD}_${VERSION}-${AUTHOR}-dhcpd"
 	if [ "$VARIANT" = "ubootmod" ] || [ "$VARIANT" = "UBOOTMOD" ]; then
 		FIP_NAME="${FIP_NAME}-fit"
 	fi
@@ -311,7 +311,7 @@ else
 fi
 if grep -Eq "(^_|CONFIG_TARGET_ALL_NO_SEC_BOOT=y)" "$ATF_CFG_PATH"; then
 	if [ -f "$ATF_DIR/build/${SOC}/release/bl2.img" ]; then
-		BL2_NAME="${SOC}_${BOARD}_${VERSION}-bl2"
+		BL2_NAME="bl2-${SOC}_${BOARD}_${VERSION}"
 		if [ "$VARIANT" = "ubootmod" ] || [ "$VARIANT" = "UBOOTMOD" ]; then
 			BL2_NAME="${BL2_NAME}-fit"
 		fi
