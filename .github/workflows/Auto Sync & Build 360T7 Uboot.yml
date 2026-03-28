@@ -54,8 +54,12 @@ jobs:
 
       - name: Keep only latest release
         run: |
-          gh release list --limit 50 --json tagName --jq '.[].tagName' | tail -n +2 | while read tag; do
-            gh release delete "$tag" --yes
-          done
+          tags=$(gh release list --limit 50 --json tagName --jq '.[].tagName')
+          count=$(echo "$tags" | wc -l)
+          if [ $count -gt 1 ]; then
+            echo "$tags" | head -n -1 | while read tag; do
+              gh release delete "$tag" --yes
+            done
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
