@@ -25,7 +25,7 @@ jobs:
           git remote add upstream https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git
           git fetch upstream
           git checkout main
-          git update-index --skip-worktree configs/mt7981_360t7_defconfig
+          git update-index --skip-worktree uboot-mtk-20250711/configs/mt7981_360t7_defconfig
           git merge --no-edit upstream/master
           git push origin main || true
           exit 0
@@ -39,7 +39,7 @@ jobs:
 
       - name: Package
         run: |
-          DATE=$(date +%Y%30)
+          DATE=$(date +%Y%m%d)
           mkdir -p out
           cp output/*.bin out/NW874_360t7-fip-fixed-parts.bin
           zip -j 360t7-uboot-$DATE.zip out/*
