@@ -55,3 +55,8 @@ jobs:
           files: NW874-360t7-uboot-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete tag after release
+        run: |
+          git push origin --delete ${{ env.RELEASE_TAG }} || true
+          git tag -d ${{ env.RELEASE_TAG }} || true
