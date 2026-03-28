@@ -40,14 +40,17 @@ jobs:
 
       - name: Package
         run: |
-          DATE=$(date +%Y%m%d_%H%M%S)
-          zip -j 360t7-uboot-$DATE.zip output/*.bin
+          DATE=$(date +%Y%m%d)
+          echo "RELEASE_TAG=$DATE" >> $GITHUB_ENV
+          cd output
+          mv *.bin NW874-360t7-uboot.bin
+          zip ../NW874-360t7-uboot-$DATE.zip NW874-360t7-uboot.bin
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.run_number }}
-          name: "Build ${{ github.run_number }}"
-          files: 360t7-uboot-*.zip
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "360T7 U-Boot ${{ env.RELEASE_TAG }}"
+          files: NW874-360t7-uboot-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
