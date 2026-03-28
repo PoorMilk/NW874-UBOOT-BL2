@@ -43,8 +43,9 @@ jobs:
           DATE=$(date +%Y%m%d)
           echo "RELEASE_TAG=$DATE" >> $GITHUB_ENV
           cd output
-          mv *.bin NW874-360t7-uboot.bin
-          zip ../NW874-360t7-uboot-$DATE.zip NW874-360t7-uboot.bin
+          mv bl2-*.img NW874-360t7-bl2.bin
+          mv fip-*.bin NW874-360t7-uboot.bin
+          zip ../NW874-360t7-uboot-$DATE.zip NW874-360t7-bl2.bin NW874-360t7-uboot.bin
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
