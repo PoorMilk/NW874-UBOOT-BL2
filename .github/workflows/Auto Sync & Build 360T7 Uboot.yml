@@ -1,0 +1,51 @@
+name: Auto Sync & Build 360T7
+on:
+  schedule:
+    - cron: "0 0 * * *"
+    - cron: "30 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync Upstream
+        run: |
+          set +e
+          git config --global user.name "actions"
+          git config --global user.email "actions@github.com"
+          git remote remove upstream || true
+          git remote add upstream https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git
+          git fetch upstream
+          git checkout main
+          git merge --no-edit upstream/master || true
+          git push origin main || true
+          exit 0
+
+      - name: Build
+        run: |
+          sudo apt update
+          sudo apt install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
+          chmod +x build.sh
+          SOC=mt7981 BOARD=360t7 ./build.sh
+
+      - name: Package
+        run: |
+          DATE=$(date +%Y%m%d)
+          mkdir -p out
+          cp output/*.bin out/NW874_360t7-fip-fixed-parts.bin
+          zip -j 360t7-uboot-$DATE.zip out/*
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: 360t7-uboot
+          path: 360t7-uboot-*.zip
+          retention-days: 7
