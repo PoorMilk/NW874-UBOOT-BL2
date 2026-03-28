@@ -1,43 +1,39 @@
-name: Auto Build 360T7 U-Boot Daily 08:30 (UTC+8)
+name: Daily Build 360T7 U-Boot
 
 on:
   schedule:
-    - cron: '30 0 * * *'  # UTC 00:30 = 北京时间 08:30
-  workflow_dispatch:     # 允许手动触发
+    - cron: '30 0 * * *'
+  workflow_dispatch:
 
 jobs:
-  build-360t7-uboot:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           ref: nw874-256m
-          fetch-depth: 0
 
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
+      - name: Install deps
+        run: sudo apt update && sudo apt install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
 
-      - name: Chmod scripts
+      - name: Chmod
         run: chmod +x build.sh
 
-      - name: Build 360T7 U-Boot
+      - name: Build
         run: SOC=mt7981 BOARD=360t7 ./build.sh
 
-      - name: Package firmware
+      - name: Package
         run: |
           DATE=$(date +%Y%m%d)
-          mkdir -p release
-          cp output/*.bin release/ 2>/dev/null
-          zip -j 360t7-uboot-${DATE}.zip release/*
+          mkdir -p out
+          cp output/*.bin out/
+          zip -j 360t7-uboot-$DATE.zip out/*
 
-      - name: Create Release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          name: 360T7 U-Boot Daily Build ${{ github.event.repository.default_branch }} $(date +%Y%m%d)
-          tag_name: 360t7-uboot-$(date +%Y%m%d)
+          name: 360T7 U-Boot ${{ date '+%Y%m%d' }}
+          tag_name: 360t7-uboot-${{ date '+%Y%m%d' }}
           draft: false
           prerelease: false
           files: 360t7-uboot-*.zip
