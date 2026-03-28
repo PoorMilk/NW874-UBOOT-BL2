@@ -51,15 +51,3 @@ jobs:
           files: 360t7-uboot-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Keep only latest release
-        run: |
-          tags=$(gh release list --limit 50 --json tagName --jq '.[].tagName')
-          count=$(echo "$tags" | wc -l)
-          if [ $count -gt 1 ]; then
-            echo "$tags" | head -n -1 | while read tag; do
-              gh release delete "$tag" --yes
-            done
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
