@@ -25,6 +25,7 @@ jobs:
           git fetch upstream
           git checkout main
           git update-index --skip-worktree uboot-mtk-20250711/configs/mt7981_360t7_defconfig
+          git update-index --skip-worktree atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c
           git merge --no-edit upstream/master
           git push origin main
 
@@ -56,7 +57,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Delete tag after release
+      - name: Delete tag
         run: |
           git push origin --delete ${{ env.RELEASE_TAG }} || true
           git tag -d ${{ env.RELEASE_TAG }} || true
