@@ -28,15 +28,15 @@ jobs:
           mkdir -p out
           cp output/*.bin out/
           zip -j 360t7-uboot-$DATE.zip out/*
-          echo "DATE=$DATE" >> $GITHUB_ENV
+          echo "FILE=360t7-uboot-$DATE.zip" >> $GITHUB_ENV
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          name: 360T7 U-Boot ${{ env.DATE }}
-          tag_name: 360t7-uboot-${{ env.DATE }}
+          name: 360T7 U-Boot
+          tag_name: build-${{ github.run_id }}
           draft: false
           prerelease: false
-          files: 360t7-uboot-*.zip
+          files: ${{ env.FILE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
