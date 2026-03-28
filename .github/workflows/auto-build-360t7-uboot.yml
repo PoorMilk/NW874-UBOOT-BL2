@@ -23,7 +23,7 @@ jobs:
         run: |
           DATE=$(date +%Y%m%d)
           mkdir -p out
-          cp output/*.bin out/
+          cp output/*.bin out/NW874_360t7-fip-fixed-parts.bin
           zip -j 360t7-uboot-$DATE.zip out/*
 
       - name: Upload
