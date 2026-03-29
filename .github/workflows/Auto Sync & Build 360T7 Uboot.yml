@@ -1,0 +1,63 @@
+name: Auto Sync & Build 360T7
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  sync-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync upstream
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git
+          git fetch upstream
+          git checkout main
+          git update-index --skip-worktree uboot-mtk-20250711/configs/mt7981_360t7_defconfig
+          git update-index --skip-worktree atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c
+          git merge --no-edit upstream/master
+          git push origin main
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
+
+      - name: Build
+        run: |
+          chmod +x build.sh
+          SOC=mt7981 BOARD=360t7 ./build.sh
+
+      - name: Package
+        run: |
+          DATE=$(date +%Y%m%d)
+          echo "RELEASE_TAG=$DATE" >> $GITHUB_ENV
+          cd output
+          mv bl2-*.img NW874-360t7-bl2.bin
+          mv fip-*.bin NW874-360t7-uboot.bin
+          zip ../NW874-360t7-uboot-$DATE.zip NW874-360t7-bl2.bin NW874-360t7-uboot.bin
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "360T7 U-Boot ${{ env.RELEASE_TAG }}"
+          files: NW874-360t7-uboot-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Delete tag
+        run: |
+          git push origin --delete ${{ env.RELEASE_TAG }} || true
+          git tag -d ${{ env.RELEASE_TAG }} || true
