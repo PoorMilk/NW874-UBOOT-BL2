@@ -42,22 +42,38 @@ jobs:
       - name: Package
         run: |
           DATE=$(date +%Y%m%d)
-          echo "RELEASE_TAG=$DATE" >> $GITHUB_ENV
           cd output
           mv bl2-*.img NW874-360t7-bl2.bin
           mv fip-*.bin NW874-360t7-uboot.bin
           zip ../NW874-360t7-uboot-$DATE.zip NW874-360t7-bl2.bin NW874-360t7-uboot.bin
 
+      - name: Delete existing latest release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const { data: release } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: 'latest'
+              });
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id
+              });
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: 'tags/latest'
+              });
+            } catch(e) {}
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: "360T7 U-Boot ${{ env.RELEASE_TAG }}"
+          tag_name: latest
+          name: "360T7 U-Boot Latest"
           files: NW874-360t7-uboot-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Delete tag
-        run: |
-          git push origin --delete ${{ env.RELEASE_TAG }} || true
-          git tag -d ${{ env.RELEASE_TAG }} || true
