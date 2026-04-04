@@ -1,7 +1,13 @@
 #!/bin/sh
 
+VERSION=${VERSION:-2025}
+SOC="${SOC:-mt7621}"
+BOARD="${BOARD:-nand_ax_rfb}"
+fixedparts=${FIXED_MTDPARTS:-0}
+multilayout=${MULTI_LAYOUT:-0}
+
 # URL of the prebuilt OpenWrt toolchain archive (can be overridden by env)
-TOOLCHAIN_URL="${TOOLCHAIN_URL:-https://github.com/DragonBluep/uboot-mt7621/releases/download/20230517/openwrt-toolchain-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz}"
+TOOLCHAIN_URL="${TOOLCHAIN_URL:-https://downloads.openwrt.org/releases/25.12.0/targets/ramips/mt7621/openwrt-toolchain-25.12.0-ramips-mt7621_gcc-14.3.0_musl.Linux-x86_64.tar.zst}"
 
 TOOLCHAIN_BIN=$(cd ./openwrt*/toolchain-mipsel*/bin 2>/dev/null; pwd)
 if [ -z "$TOOLCHAIN_BIN" ]; then
@@ -13,17 +19,14 @@ TOOLCHAIN="${TOOLCHAIN_BIN}/mipsel-openwrt-linux-"
 Staging="${TOOLCHAIN_BIN%/bin}"
 Staging="${Staging%/toolchain-*}"
 
-VERSION=${VERSION:-2025}
-
 if [ "$VERSION" = "2025" ]; then
     UBOOT_DIR=uboot-mtk-20250711
+elif [ "$VERSION" = "2026" ]; then
+    UBOOT_DIR=uboot-mtk-20260123
 else
-    echo "Error: Unsupported VERSION. Please specify VERSION=2025."
+    echo "Error: Unsupported VERSION. Please specify VERSION=2025/2026."
     exit 1
 fi
-
-SOC="${SOC:-mt7621}"
-BOARD="${BOARD:-rfb}"
 
 if [ -z "$SOC" ] || [ -z "$BOARD" ]; then
 	echo "Usage: SOC=mt7621 BOARD=<board name> VERSION=2025 $0"
@@ -31,10 +34,9 @@ if [ -z "$SOC" ] || [ -z "$BOARD" ]; then
 	exit 1
 fi
 
-# Check if Python is installed on the system
-echo "Trying python2.7..."
-command -v python2.7
-[ "$?" != "0" ] && { echo "Error: Python2.7 is not installed on this system."; exit 0; }
+echo "======================================================================"
+echo "Checking environment..."
+echo "======================================================================"
 
 # Check if Python is installed on the system
 echo "Trying python3..."
@@ -53,10 +55,10 @@ if [ "$?" != "0" ]; then
 		[Yy]* )
 			if command -v wget >/dev/null 2>&1; then
 				echo "Downloading and extracting toolchain..."
-				wget -O - "$TOOLCHAIN_URL" | tar --xz -xf - || { echo "Download or extraction failed"; exit 1; }
+				wget -O - "$TOOLCHAIN_URL" | tar --zstd -xf - || { echo "Download or extraction failed"; exit 1; }
 			elif command -v curl >/dev/null 2>&1; then
 				echo "Downloading and extracting toolchain with curl..."
-				curl -L "$TOOLCHAIN_URL" | tar --xz -xf - || { echo "Download or extraction failed"; exit 1; }
+				curl -L "$TOOLCHAIN_URL" | tar --zstd -xf - || { echo "Download or extraction failed"; exit 1; }
 			else
 				echo "Neither wget nor curl is available. Please install one or download the toolchain manually: $TOOLCHAIN_URL"
 				exit 1
@@ -87,17 +89,24 @@ fi
 echo "CROSS_COMPILE=${TOOLCHAIN}"
 echo "STAGING_DIR=${Staging}"
 
-UBOOT_CFG="${SOC}_${BOARD}_defconfig"
+CONFIGS_DIR_DEFAULT="configs"
 
-# Build fixed-mtdparts by default for NAND
-fixedparts=${FIXED_MTDPARTS:-1}
-multilayout=${MULTI_LAYOUT:-0}
+UBOOT_CFG="${SOC}_${BOARD}_defconfig"
+UBOOT_CFG_PATH="$UBOOT_DIR/$CONFIGS_DIR_DEFAULT/$UBOOT_CFG"
+
 if [ "$multilayout" = "1" ]; then
 	UBOOT_CFG="${SOC}_${BOARD}_multi_layout_defconfig"
 fi
 
-echo "Building for:  ${SOC}_${BOARD}, fixed-mtdparts: $fixedparts, multi-layout: $multilayout"
-echo "u-boot dir: $UBOOT_DIR"
+echo "======================================================================"
+echo "Configuration:"
+echo "======================================================================"
+
+echo "VERSION: $VERSION"
+echo "TARGET:  ${SOC}_${BOARD}"
+echo "U-Boot Dir: $UBOOT_DIR"
+echo "U-Boot CFG: $UBOOT_CFG_PATH"
+echo "Features: fixed-mtdparts: $fixedparts, multi-layout: $multilayout"
 
 if [ ! -d "$UBOOT_DIR" ]; then
 	echo "Error: U-Boot directory '$UBOOT_DIR' not found!"
@@ -109,7 +118,10 @@ if [ ! -f "$UBOOT_DIR/configs/$UBOOT_CFG" ]; then
 	exit 1
 fi
 
+echo "======================================================================"
 echo "Build u-boot..."
+echo "======================================================================"
+
 rm -f "$UBOOT_DIR/u-boot.bin"
 cp -f "$UBOOT_DIR/configs/$UBOOT_CFG" "$UBOOT_DIR/.config"
 
@@ -119,7 +131,6 @@ if [ "$fixedparts" = "1" ]; then
 	echo "CONFIG_MTK_FIXED_MTD_MTDPARTS=y" >> "$UBOOT_DIR/.config"
 fi
 
-echo "----------------------------------------"
 make -C "$UBOOT_DIR" olddefconfig
 make -C "$UBOOT_DIR" clean
 make -C "$UBOOT_DIR" CROSS_COMPILE="${TOOLCHAIN}" STAGING_DIR="${Staging}" -j $(nproc) all
@@ -131,9 +142,12 @@ else
 	exit 1
 fi
 
+echo "======================================================================"
+echo "Copying output files..."
+echo "======================================================================"
+
 mkdir -p "output_mt7621"
 if [ -f "$UBOOT_DIR/u-boot.bin" ]; then
-	echo "----------------------------------------"
 	MD5SUM=$(md5sum "$UBOOT_DIR/u-boot.bin" | awk '{print $1}')
 	echo "u-boot.bin md5sum: $MD5SUM"
 	UBOOTNAME="$SOC-u-boot-$BOARD-${VERSION}_md5-${MD5SUM}.bin"
