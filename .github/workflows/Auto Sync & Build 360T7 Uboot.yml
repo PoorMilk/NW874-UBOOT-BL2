@@ -28,18 +28,21 @@ jobs:
         run: |
           set -e
           git checkout main
-          git pull origin main
           cp README.md /tmp/README.md.bak 2>/dev/null || true
           cp uboot-mtk-*/configs/mt7981_360t7_defconfig /tmp/mt7981_360t7_defconfig.bak 2>/dev/null || true
           cp atf-*/plat/mediatek/mt7981/drivers/pll/pll.c /tmp/pll.c.bak 2>/dev/null || true
+          git fetch upstream
           git reset --hard upstream/master
-          git pull origin main --rebase
           cp /tmp/README.md.bak README.md 2>/dev/null || true
           cp /tmp/mt7981_360t7_defconfig.bak uboot-mtk-*/configs/mt7981_360t7_defconfig 2>/dev/null || true
           cp /tmp/pll.c.bak atf-*/plat/mediatek/mt7981/drivers/pll/pll.c 2>/dev/null || true
           git add .
-          git commit -m "Restore custom files: README.md, mt7981_360t7_defconfig, pll.c" || echo "No changes to commit"
-          git push origin main
+          if ! git diff --cached --quiet; then
+            git commit -m "Restore custom files: README.md, mt7981_360t7_defconfig, pll.c"
+            git push origin main
+          else
+            echo "No custom file changes to commit."
+          fi
       - name: Install dependencies
         run: |
           sudo apt update -y
