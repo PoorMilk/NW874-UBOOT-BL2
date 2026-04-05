@@ -21,8 +21,9 @@ jobs:
           git remote remove upstream 2>/dev/null || true
           git remote add upstream https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git
           git fetch upstream
+          git fetch origin main
           git checkout main
-          git pull origin main --rebase
+          git reset --hard origin/main
           git update-index --skip-worktree uboot-mtk-20250711/configs/mt7981_360t7_defconfig
           git update-index --skip-worktree atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c
           git merge --no-edit upstream/master
