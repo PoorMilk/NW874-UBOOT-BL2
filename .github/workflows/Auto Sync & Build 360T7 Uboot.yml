@@ -80,7 +80,7 @@ jobs:
             const { owner, repo } = context.repo;
             const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
               owner, repo,
-              workflow_id: context.workflow,
+              workflow_id: 'Auto Sync & Build 360T7.yml',
               per_page: 100
             });
             const toDelete = runs.slice(5);
