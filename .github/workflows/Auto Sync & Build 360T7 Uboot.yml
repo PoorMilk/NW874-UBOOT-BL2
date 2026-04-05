@@ -21,28 +21,29 @@ jobs:
           git remote remove upstream 2>/dev/null || true
           git remote add upstream https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git
           git fetch upstream
-          git fetch origin main
           git checkout main
-          git reset --hard origin/main
-          mkdir -p /tmp/backup
-          cp README.md /tmp/backup/
-          cp uboot-mtk-20250711/configs/mt7981_360t7_defconfig /tmp/backup/
-          cp atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c /tmp/backup/
-          git merge --no-edit upstream/master
-          cp /tmp/backup/README.md .
-          cp /tmp/backup/mt7981_360t7_defconfig uboot-mtk-20250711/configs/
-          cp /tmp/backup/pll.c atf-20250711/plat/mediatek/mt7981/drivers/pll/
+          git reset --hard upstream/master
+          git push origin main --force-with-lease
+      - name: Restore custom files
+        run: |
+          set -e
+          git checkout main
+          git pull origin main
+          cp README.md /tmp/README.md.bak 2>/dev/null || true
+          cp uboot-mtk-*/configs/mt7981_360t7_defconfig /tmp/mt7981_360t7_defconfig.bak 2>/dev/null || true
+          cp atf-*/plat/mediatek/mt7981/drivers/pll/pll.c /tmp/pll.c.bak 2>/dev/null || true
+          git reset --hard upstream/master
+          git pull origin main --rebase
+          cp /tmp/README.md.bak README.md 2>/dev/null || true
+          cp /tmp/mt7981_360t7_defconfig.bak uboot-mtk-*/configs/mt7981_360t7_defconfig 2>/dev/null || true
+          cp /tmp/pll.c.bak atf-*/plat/mediatek/mt7981/drivers/pll/pll.c 2>/dev/null || true
           git add .
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit --no-edit
-          fi
+          git commit -m "Restore custom files: README.md, mt7981_360t7_defconfig, pll.c" || echo "No changes to commit"
           git push origin main
       - name: Install dependencies
         run: |
           sudo apt update -y
-          sudo apt install -yq gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
+          sudo apt install -yq git wget lzop gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
       - name: Build
         run: |
           set -e
