@@ -15,16 +15,17 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Sync upstream
         run: |
+          set -e
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git remote remove upstream 2>/dev/null || true
           git remote add upstream https://github.com/Yuzhii0718/bl-mt798x-dhcpd.git
           git fetch upstream
           git checkout main
+          git pull origin main --rebase
           git update-index --skip-worktree uboot-mtk-20250711/configs/mt7981_360t7_defconfig
           git update-index --skip-worktree atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c
           git merge --no-edit upstream/master
-          git update-index --skip-worktree uboot-mtk-20250711/configs/mt7981_360t7_defconfig
-          git update-index --skip-worktree atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c
           git push origin main
       - name: Install dependencies
         run: |
@@ -32,10 +33,17 @@ jobs:
           sudo apt install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
       - name: Build
         run: |
+          set -e
           chmod +x build.sh
           SOC=mt7981 BOARD=360t7 ./build.sh
+      - name: Verify build output
+        run: |
+          ls -lh output/
+          ls output/bl2-*.img >/dev/null 2>&1 || exit 1
+          ls output/fip-*.bin >/dev/null 2>&1 || exit 1
       - name: Package & Set variables
         run: |
+          set -e
           DATE=$(date +%Y%m%d)
           TIME=$(date +%H%M%S)
           cd output
