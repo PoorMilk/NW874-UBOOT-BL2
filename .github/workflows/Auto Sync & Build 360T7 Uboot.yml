@@ -28,12 +28,16 @@ jobs:
           cp README.md /tmp/backup/
           cp uboot-mtk-20250711/configs/mt7981_360t7_defconfig /tmp/backup/
           cp atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c /tmp/backup/
-          git merge --no-edit upstream/master || true
+          git merge --no-edit upstream/master
           cp /tmp/backup/README.md .
           cp /tmp/backup/mt7981_360t7_defconfig uboot-mtk-20250711/configs/
           cp /tmp/backup/pll.c atf-20250711/plat/mediatek/mt7981/drivers/pll/
           git add .
-          git commit --no-edit
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit --no-edit
+          fi
           git push origin main
       - name: Install dependencies
         run: |
@@ -65,26 +69,37 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const { data: releases } = await github.rest.repos.listReleases({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              per_page: 100
-            });
-            const sortedReleases = releases.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-            const toDelete = sortedReleases.slice(2);
-            for (const release of toDelete) {
-              try {
-                await github.rest.repos.deleteRelease({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  release_id: release.id
-                });
-                await github.rest.git.deleteRef({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  ref: `tags/${release.tag_name}`
-                }).catch(() => {});
-              } catch(e) {}
+            try {
+              const { data: releases } = await github.rest.repos.listReleases({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+              if (releases.length <= 2) {
+                console.log(`Only ${releases.length} releases, nothing to delete`);
+                return;
+              }
+              const sortedReleases = releases.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+              const toDelete = sortedReleases.slice(2);
+              for (const release of toDelete) {
+                try {
+                  await github.rest.repos.deleteRelease({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    release_id: release.id
+                  });
+                  await github.rest.git.deleteRef({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    ref: `tags/${release.tag_name}`
+                  }).catch(() => {});
+                  console.log(`Deleted release ${release.name || release.tag_name}`);
+                } catch(e) {
+                  console.log(`Failed to delete ${release.tag_name}: ${e.message}`);
+                }
+              }
+            } catch(e) {
+              console.log(`Error: ${e.message}`);
             }
       - name: Create Release
         uses: softprops/action-gh-release@v2
