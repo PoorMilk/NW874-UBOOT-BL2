@@ -30,8 +30,8 @@ jobs:
           git push origin main
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
+          sudo apt update -y
+          sudo apt install -yq gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
       - name: Build
         run: |
           set -e
