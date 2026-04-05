@@ -13,13 +13,6 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache apt packages
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/apt/archives
-          key: ubuntu-apt-${{ runner.os }}-${{ hashFiles('dependencies.txt') }}
-          restore-keys: |
-            ubuntu-apt-${{ runner.os }}-
       - name: Sync upstream
         run: |
           git config --global user.name "github-actions[bot]"
