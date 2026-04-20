@@ -108,3 +108,4 @@ CONFIG_DM_ETH=y
 CONFIG_POLLER=y
 CONFIG_ENV_MTD_DEV="u-boot-env"
 # CONFIG_MMC is not set
+CONFIG_MTK_DEFAULT_FIT_BOOT_CONF="config@ruijie_x60_gsw_en8811h_phy"
