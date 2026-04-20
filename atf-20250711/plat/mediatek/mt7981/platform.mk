@@ -54,7 +54,7 @@ endif
 CPPFLAGS += -DOPTEE_TZRAM_SIZE=$(OPTEE_TZRAM_SIZE)
 
 # MT7981 ARMPLL target frequency (MHz): 1300 (default), 1400~1800.
-override MT7981_ARMPLL_FREQ_MHZ = 1400
+override MT7981_ARMPLL_FREQ_MHZ = 1300
 $(eval $(call add_define_val,MT7981_ARMPLL_FREQ_MHZ,$(MT7981_ARMPLL_FREQ_MHZ)))
 
 # Make sure make command parameter reflects on .o files immediately
