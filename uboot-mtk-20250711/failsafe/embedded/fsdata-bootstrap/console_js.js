@@ -13,6 +13,7 @@ function consoleInit() {
     const commandInput = document.getElementById("console_cmd");
     const statusElement = document.getElementById("console_status");
     const tokenInput = document.getElementById("console_token");
+    const abortButton = document.getElementById("console_abort");
     const persistKey = "failsafe_console_output";
     const persistMax = 200000;
 
@@ -21,8 +22,42 @@ function consoleInit() {
         pollTimer: null,
         history: [],
         histPos: -1,
-        tokenKey: "failsafe_console_token"
+        tokenKey: "failsafe_console_token",
+        busySince: 0
     };
+
+    /*
+     * Repetition period of the poll loop.
+     *
+     * While a command is executing we poll twice as fast: net commands
+     * (tftp, ping, ...) stream their progress through the very same
+     * endpoint, and 300 ms makes a '#' progress bar look stuttery.
+     */
+    function pollDelay() {
+        return APP_STATE.console.busySince ? 150 : 300;
+    }
+
+    /*
+     * Reflect the server-side "busy" flag in the status line.
+     *
+     * Without this a long-running command looks like a hung page: the
+     * fetch for /console/exec stays pending for the whole transfer and
+     * nothing on screen changes until it completes.
+     */
+    function setBusy(busy) {
+        if (busy) {
+            if (!APP_STATE.console.busySince) APP_STATE.console.busySince = Date.now();
+            const seconds = Math.floor((Date.now() - APP_STATE.console.busySince) / 1000);
+            abortButton && (abortButton.style.display = "");
+            setStatus(t("console.status.running") + " · " + seconds + "s");
+            return;
+        }
+        if (APP_STATE.console.busySince) {
+            APP_STATE.console.busySince = 0;
+            abortButton && (abortButton.style.display = "none");
+            setStatus(t("console.status.done"));
+        }
+    }
 
     function loadToken() {
         try {
@@ -58,18 +93,68 @@ function consoleInit() {
         } catch (error) { }
     }
 
+    /*
+     * Append console output with terminal semantics.
+     *
+     * U-Boot progress output (tftp's '#' marks, mtkupgrade's percentage
+     * bars, "Loading: *\b", ...) is written with \r (return to column 0)
+     * and \b (backspace) so a single line keeps repainting itself.
+     *
+     * Rewriting every \r to \n — as done previously — turned one progress
+     * bar into hundreds of lines and destroyed the whole point of the
+     * in-place update.  We interpret the control characters instead:
+     *
+     *   \r      discard the current line and continue from column 0
+     *   \r\n    a real newline (the \n does the work, \r is skipped)
+     *   \b      drop the last character
+     */
     function appendText(text) {
         if (!outputElement) return;
         if (!text) return;
-        /*
-         * Normalize line endings: U-Boot uses \r\n; CSS white-space:pre-wrap
-         * honours \r as a real carriage-return, which can overwrite text
-         * when \r\n is split across poll boundaries.
-         * Convert \r\n→\n first, then any remaining \r→\n.
-         */
-        text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-        outputElement.textContent += text;
-        if (outputElement.textContent.length > persistMax) outputElement.textContent = outputElement.textContent.slice(outputElement.textContent.length - persistMax);
+
+        let current = outputElement.textContent || "";
+        let pending = "";
+
+        function flush() {
+            if (pending) {
+                current += pending;
+                pending = "";
+            }
+        }
+
+        for (let index = 0; index < text.length; index++) {
+            const character = text[index];
+
+            if (character === "\r") {
+                flush();
+                /* "\r\n" is a plain newline: let the \n handle it */
+                if (text[index + 1] !== "\n") {
+                    const lastBreak = current.lastIndexOf("\n");
+                    current = lastBreak < 0 ? "" : current.slice(0, lastBreak + 1);
+                }
+                continue;
+            }
+
+            if (character === "\b") {
+                flush();
+                if (current && current[current.length - 1] !== "\n") {
+                    current = current.slice(0, -1);
+                }
+                continue;
+            }
+
+            if (character === "\n") {
+                flush();
+                current += "\n";
+                continue;
+            }
+
+            pending += character;
+        }
+        flush();
+
+        if (current.length > persistMax) current = current.slice(current.length - persistMax);
+        outputElement.textContent = current;
         savePersistedOutput();
         outputElement.scrollTop = outputElement.scrollHeight;
     }
@@ -93,6 +178,7 @@ function consoleInit() {
                 return;
             }
             payload && payload.data && appendText(payload.data);
+            setBusy(!!(payload && payload.busy));
             if (payload && payload.overflow) {
                 setStatus(String.fromCodePoint(0x26A0) + " " + t("console.status.overflow"));
             }
@@ -106,7 +192,7 @@ function consoleInit() {
         APP_STATE.console.pollTimer = setTimeout(async () => {
             await pollOnce();
             schedulePoll();
-        }, 300);
+        }, pollDelay());
     }
 
     window.consoleSend = async function () {
@@ -122,18 +208,52 @@ function consoleInit() {
             const formData = new FormData();
             formData.append("cmd", commandLine);
             if (tokenInput && tokenInput.value) formData.append("token", tokenInput.value);
-            setStatus(t("console.status.running"));
+            /*
+             * Mark busy before the request goes out: the response only
+             * arrives once run_command() has finished, which for a
+             * network command can be minutes.  The live output is
+             * delivered by the poll loop in the meantime.
+             */
+            setBusy(true);
             const response = await fetch("/console/exec", { method: "POST", body: formData });
             const responseText = await response.text();
             if (!response.ok) {
+                APP_STATE.console.busySince = 0;
+                abortButton && (abortButton.style.display = "none");
                 setStatus(t("console.status.http") + " " + response.status + (responseText ? ": " + responseText : ""));
                 return;
             }
             try {
                 const payload = JSON.parse(responseText);
+                APP_STATE.console.busySince = 0;
+                abortButton && (abortButton.style.display = "none");
                 setStatus(t("console.status.ret") + " " + (payload && typeof payload.ret !== "undefined" ? payload.ret : "?"));
             } catch (error) {
+                APP_STATE.console.busySince = 0;
+                abortButton && (abortButton.style.display = "none");
                 setStatus(t("console.status.done"));
+            }
+        } catch (error) {
+            setStatus(t("console.status.error") + " " + (error && error.message ? error.message : String(error)));
+        }
+    };
+
+    /*
+     * Request the server to interrupt the running command.
+     *
+     * Network commands spend their time in net_loop(); the POST is served
+     * from inside that very loop and makes it exit, mirroring Ctrl+C on a
+     * serial console.  It is safe to repeat while a command is running.
+     */
+    window.consoleAbort = async function () {
+        if (!APP_STATE.console.busySince) return;
+        const formData = new FormData();
+        if (tokenInput && tokenInput.value) formData.append("token", tokenInput.value);
+        try {
+            const response = await fetch("/console/abort", { method: "POST", body: formData });
+            const responseText = await response.text();
+            if (!response.ok) {
+                setStatus(t("console.status.http") + " " + response.status + (responseText ? ": " + responseText : ""));
             }
         } catch (error) {
             setStatus(t("console.status.error") + " " + (error && error.message ? error.message : String(error)));
@@ -160,6 +280,18 @@ function consoleInit() {
 
     if (commandInput) {
         commandInput.addEventListener("keydown", function (event) {
+            if (event.ctrlKey && (event.key === "c" || event.key === "C")) {
+                /*
+                 * While a command is running Ctrl+C aborts it (like a
+                 * serial console); otherwise it is the ordinary copy
+                 * shortcut and must be left to the browser.
+                 */
+                if (APP_STATE.console.busySince) {
+                    event.preventDefault();
+                    window.consoleAbort();
+                }
+                return;
+            }
             if (event.key === "Enter") {
                 event.preventDefault();
                 window.consoleSend();
