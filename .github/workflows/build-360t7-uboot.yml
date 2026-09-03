@@ -1,0 +1,132 @@
+name: Build 360T7 U-Boot & BL2
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  UPSTREAM_REPO: Yuzhii0718/bl-mt798x-dhcpd
+  UPSTREAM_BRANCH: master
+  TARGET_BOARD: qihoo_360t7
+  TAG_PREFIX: uboot-bl2
+  VERSION: 2025
+  VARIANT: default
+  OC7981_FREQ: 17
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync upstream
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${{ env.UPSTREAM_REPO }}"
+          git fetch origin
+          git fetch upstream
+          git reset --hard "upstream/${{ env.UPSTREAM_BRANCH }}"
+          git checkout origin/main -- \
+            .github \
+            README.md \
+            uboot-mtk-20250711/configs/mt7981_qihoo_360t7_defconfig \
+            atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c || true
+          git add .
+          git commit -m "Sync upstream and preserve custom configs" || true
+          git push -f origin main
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler tar
+
+      - name: Generate configuration
+        run: |
+          mkdir -p uboot-mtk-20250711
+          cat <<EOF > .config
+          CONFIG_BUILD_FIP=y
+          CONFIG_BUILD_ATF=y
+          CONFIG_BUILD_GPT=n
+          CONFIG_VERSION_2025=y
+          CONFIG_VARIANT_DEFAULT=y
+          CONFIG_FSTHEME_BOOTSTRAP=y
+          CONFIG_MULTI_LAYOUT=y
+          CONFIG_FIXED_MTDPARTS=y
+          CONFIG_SILENT=y
+          CONFIG_BUILD_LOG=y
+          CONFIG_COPY_BL2=y
+          CONFIG_BOARD_MT7981_QIHOO_360T7=y
+          EOF
+
+      - name: Compile U-Boot and BL2
+        run: |
+          make BOARD=${{ env.TARGET_BOARD }} \
+               VERSION=${{ env.VERSION }} \
+               VARIANT=${{ env.VARIANT }} \
+               BUILD_ATF=1 \
+               OC7981=${{ env.OC7981_FREQ }} \
+               MULTI_LAYOUT=1 \
+               FIXED_MTDPARTS=1 \
+               build
+
+      - name: Prepare release artifacts
+        run: |
+          mkdir -p release
+          cp -f output/*bl2* release/bl2-mt7981_qihoo_360t7_oc${{ env.OC7981_FREQ }}.img 2>/dev/null || true
+          cp -f output/*fip* release/fip-mt7981_qihoo_360t7.bin 2>/dev/null || true
+          cp -f output/*.log release/build.log 2>/dev/null || true
+          cd release && sha256sum * > sha256sums.txt 2>/dev/null || true
+
+      - name: Set release metadata
+        run: |
+          echo "RELEASE_TAG=${{ env.TAG_PREFIX }}-$(date +'%Y%m%d_%H%M')" >> $GITHUB_ENV
+          echo "RELEASE_TIME=$(date +'%Y-%m-%d %H:%M')" >> $GITHUB_ENV
+          echo "CPU_CLOCK=$(awk "BEGIN {print ${{ env.OC7981_FREQ }}/10}")" >> $GITHUB_ENV
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: 360T7 U-Boot & BL2 (${{ env.CPU_CLOCK }}GHz) ${{ env.RELEASE_TIME }}
+          body: |
+            Build Time: ${{ env.RELEASE_TIME }}
+            Target Board: 360 T7 (${{ env.TARGET_BOARD }})
+            CPU Clock: ${{ env.CPU_CLOCK }} GHz
+          generate_release_notes: false
+
+      - name: Prune old releases
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/releases" \
+            --jq 'sort_by(.created_at) | reverse | .[5:] | .[]? | "\(.id) \(.tag_name)"' \
+            | while read -r id tag; do
+                if [ -n "$id" ]; then
+                  gh api -X DELETE "repos/${{ github.repository }}/releases/$id" || true
+                  gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/$tag" || true
+                fi
+              done
+
+      - name: Prune old workflow runs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh run list --repo "${{ github.repository }}" --limit 100 --json databaseId \
+            --jq '.[5:] | .[].databaseId' | while read -r run_id; do
+              if [ -n "$run_id" ]; then
+                gh run delete "$run_id" --repo "${{ github.repository }}" || true
+              fi
+            done
