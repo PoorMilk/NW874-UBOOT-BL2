@@ -302,6 +302,7 @@ extern const struct spinand_manufacturer ato_spinand_manufacturer;
 extern const struct spinand_manufacturer ato_ad_spinand_manufacturer;
 extern const struct spinand_manufacturer biwin_spinand_manufacturer;
 extern const struct spinand_manufacturer chucun_spinand_manufacturer;
+extern const struct spinand_manufacturer damay_spinand_manufacturer;
 extern const struct spinand_manufacturer dosilicon_spinand_manufacturer;
 extern const struct spinand_manufacturer esmt_8c_spinand_manufacturer;
 extern const struct spinand_manufacturer esmt_c8_spinand_manufacturer;
