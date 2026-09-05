@@ -15,8 +15,8 @@ config MTD_SPI_NAND_DEVICE_AUTOSELECT
 	  GIGADEVICE, GSTO, MACRONIX, MICRON, PARAGON, SKYHIGH, TOSHIBA,
 	  WINBOND, WODPOSIT, XTX.
 	  Disable by default: ALLIANCEMEMORY, ATO, BIWIN, CHUCUN, FISON,
-	  HIKSEMI, HYF, ISSI, JSC, KINGSTON, MIRA, MK, SILICONGO, TITAN,
-	  TYM, UNIM, XINCUN, ZBIT, ZENTEL.
+	  HIKSEMI, HYF, ICTHINK, ISSI, JSC, KINGSTON, MIRA, MK, SILICONGO,
+	  TITAN, TYM, UNIM, XINCUN, ZBIT, ZENTEL.
 	  If you want to add support for more SPI Nand flash chips,
 	  please enable the corresponding option below.
 
@@ -104,6 +104,12 @@ config MTD_SPI_NAND_HYF
 	default n
 	help
 	  Add support for various HYF SPI Nand flash chips
+
+config MTD_SPI_NAND_ICTHINK
+	bool "IC-THINK SPI flash support"
+	default n
+	help
+	  Add support for various IC-THINK SPI Nand flash chips
 
 config MTD_SPI_NAND_ISSI
 	bool "ISSI SPI flash support"
