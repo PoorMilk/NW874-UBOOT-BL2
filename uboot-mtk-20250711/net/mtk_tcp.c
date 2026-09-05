@@ -145,6 +145,18 @@ bool mtk_tcp_abort_pending(void)
 
 void mtk_tcp_start(void)
 {
+	/*
+	 * A previous session may have left an ARP resolution pending, for
+	 * example a connection that was destroyed while its peer MAC was
+	 * still unknown.  The web failsafe pumps eth_rx() from its own poll
+	 * loop and never runs arp_timeout_check(), so that state does not
+	 * expire on its own: it would survive into the new session, keep
+	 * pointing at the dead connection and make every later ARP reply
+	 * write through a dangling pointer.  Start from a clean state.
+	 */
+	if (arp_is_waiting())
+		arp_wait_clear();
+
 	mtk_tcp_stop = 0;
 	mtk_tcp_log("[MTK_TCP] mtk_tcp_start: stop=%d\n", mtk_tcp_stop);
 }
@@ -1369,6 +1381,53 @@ int mtk_tcp_send_data(const void *conn, const void *data, u32 size)
 	return 0;
 }
 
+/*
+ * Tear a connection down immediately: reset the peer, notify the upper layer
+ * so it can free its private data, and drop the connection from conn_head.
+ *
+ * This is the only safe way to dispose of a connection once the networking
+ * session is ending.  mtk_tcp_close_conn(c, 0) only raises close_flag and
+ * relies on a FIN/ACK round trip to reach TIME_WAIT before the connection is
+ * deleted, but the caller is about to (or already has) call eth_halt(), so
+ * that round trip never completes and the connection stays on conn_head
+ * forever with close_flag set.
+ *
+ * Such a leftover is found again by mtk_tcp_conn_find() as soon as the peer
+ * reconnects from the same source port -- which is exactly what a browser
+ * does when the web failsafe is stopped and started again.  The next session
+ * then hands freed per-connection data back to the callback, and the first
+ * packet that arrives on the stale connection dereferences uri handlers that
+ * httpd_free_instance() has already released.
+ */
+static void mtk_tcp_conn_teardown(struct mtk_tcp_conn *c)
+{
+	struct mtk_tcp_cb_data cbd = {};
+
+	/*
+	 * Only reset when the peer MAC is known.  Otherwise
+	 * mtk_tcp_send_packet_opt() would kick off an ARP request for a
+	 * connection that is being destroyed right now, leaving the ARP wait
+	 * state pointing into freed memory.
+	 */
+	if (memcmp(c->ethaddr, net_null_ethaddr, 6))
+		mtk_tcp_send_packet(c, MTK_TCP_RST | MTK_TCP_ACK,
+				    c->local_seq, c->peer_seq, NULL, 0);
+
+	if (c->cb && c->pdata) {
+		cbd.conn = c;
+		cbd.sip = c->ip_remote.s_addr;
+		cbd.sp = c->port_remote;
+		cbd.dp = c->port_local;
+		cbd.pdata = c->pdata;
+		cbd.status = MTK_TCP_CB_CLOSED;
+
+		assert((size_t)c->cb > gd->ram_base);
+		c->cb(&cbd);
+	}
+
+	mtk_tcp_conn_del(c);
+}
+
 int mtk_tcp_close_conn(const void *conn, int rst)
 {
 	struct mtk_tcp_conn *c = (struct mtk_tcp_conn *)conn;
@@ -1377,9 +1436,7 @@ int mtk_tcp_close_conn(const void *conn, int rst)
 		return -EINVAL;
 
 	if (rst) {
-		mtk_tcp_send_packet(c, MTK_TCP_RST | MTK_TCP_ACK, c->local_seq,
-				c->peer_seq, NULL, 0);
-		mtk_tcp_conn_del(c);
+		mtk_tcp_conn_teardown(c);
 	} else {
 		c->close_flag = 1;
 	}
@@ -1397,7 +1454,7 @@ void mtk_tcp_close_all_conn(void)
 
 	list_for_each_safe(lh, n, &conn_head) {
 		c = list_entry(lh, struct mtk_tcp_conn, node);
-		mtk_tcp_close_conn(c, 0);
+		mtk_tcp_conn_teardown(c);
 	}
 
 	/*
@@ -1415,7 +1472,40 @@ void mtk_tcp_close_all_conn(void)
 		free(l);
 	}
 
+	/*
+	 * A connection that sent through mtk_tcp_send_packet_opt() with an
+	 * unresolved peer MAC is referenced by the ARP wait state
+	 * (arp_wait_packet_ethaddr points into the connection).  The
+	 * connections are gone now, so drop that state too -- otherwise an
+	 * ARP reply arriving in the next session writes through a dangling
+	 * pointer and transmits a stale net_tx_packet.
+	 */
+	if (arp_is_waiting())
+		arp_wait_clear();
+
 	mtk_tcp_stop = 1;
+}
+
+void mtk_tcp_close_conn_by_port(__be16 port)
+{
+	struct list_head *lh, *n;
+	struct mtk_tcp_conn *c;
+
+	/*
+	 * Dispose of every connection still tracked for a local port.
+	 *
+	 * Used when an upper layer (httpd) tears down its instance: the
+	 * per-connection data of the still-tracked connections references
+	 * resources owned by that instance, so they must go away before the
+	 * instance is freed.  Without this, restarting the web failsafe
+	 * leaves the connections of the previous session behind and the next
+	 * packet from the peer runs the callback on freed state.
+	 */
+	list_for_each_safe(lh, n, &conn_head) {
+		c = list_entry(lh, struct mtk_tcp_conn, node);
+		if (c->port_local == port)
+			mtk_tcp_conn_teardown(c);
+	}
 }
 
 void mtk_tcp_reset_all_conn(void)
