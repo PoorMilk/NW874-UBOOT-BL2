@@ -38,38 +38,55 @@ jobs:
       - run: |
           sudo timedatectl set-timezone "$TZ"
           sudo apt-get update -qq
-          sudo apt-get install -qq -y gcc-aarch64-linux-gnu build-essential flex bison libssl-dev device-tree-compiler
+          sudo apt-get install -qq -y \
+            gcc-aarch64-linux-gnu build-essential flex bison \
+            libssl-dev device-tree-compiler
           mkdir -p /tmp/release
 
       - run: |
           chmod +x build.sh compile_atf.sh
-          make BOARD=${{ env.TARGET_BOARD }} VERSION=${{ env.VERSION }} VARIANT=${{ env.VARIANT }} BUILD_ATF=1 BUILD_FIP=1 MULTI_LAYOUT=1 FIXED_MTDPARTS=1 build
-          for f in output/*bl2*.img; do cp -f "$f" "/tmp/release/360t7-bl2-stock.img"; done
-          for f in output/*fip*.bin; do cp -f "$f" "/tmp/release/360t7-fip.bin"; done
+          make BOARD=${{ env.TARGET_BOARD }} \
+            VERSION=${{ env.VERSION }} \
+            VARIANT=${{ env.VARIANT }} \
+            BUILD_ATF=1 BUILD_FIP=1 \
+            MULTI_LAYOUT=1 FIXED_MTDPARTS=1 build
+          
+          for f in output/*bl2*.img; do
+            cp -f "$f" "/tmp/release/360t7-bl2-stock.img"
+          done
+          
+          for f in output/*fip*.bin; do
+            cp -f "$f" "/tmp/release/360t7-fip.bin"
+          done
 
       - run: |
           git clean -fdx
           git reset --hard HEAD
-          make -C atf-20250711 CROSS_COMPILE=aarch64-linux-gnu- PLAT=mt7981 BOOT_DEVICE=ram DRAM_USE_DDR3=1 bl2
-          cp -f atf-20250711/build/mt7981/release/bl2.bin /tmp/release/mt7981-uart-ddr3-bl2.bin
+          make -C atf-20250711 \
+            CROSS_COMPILE=aarch64-linux-gnu- PLAT=mt7981 \
+            BOOT_DEVICE=ram DRAM_USE_DDR3=1 bl2
+          cp -f atf-20250711/build/mt7981/release/bl2.bin \
+            /tmp/release/mt7981-uart-ddr3-bl2.bin
 
       - run: |
-          for freq in 1400 1500 1600 1700; do
-            case $freq in
-              1400) suffix="1.4g" ;;
-              1500) suffix="1.5g" ;;
-              1600) suffix="1.6g" ;;
-              1700) suffix="1.7g" ;;
-            esac
-            
+          for f in 1400 1500 1600 1700; do
             git clean -fdx
             git reset --hard HEAD
             
-            sed -i "1s/^/#undef MT7981_ARMPLL_FREQ_MHZ\n#define MT7981_ARMPLL_FREQ_MHZ ${freq}U\n/" atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c
+            sed -i \
+              "1s/^/#undef MT7981_ARMPLL_FREQ_MHZ\n#define MT7981_ARMPLL_FREQ_MHZ ${f}U\n/" \
+              atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c
             
             chmod +x build.sh compile_atf.sh
-            make BOARD=${{ env.TARGET_BOARD }} VERSION=${{ env.VERSION }} VARIANT=${{ env.VARIANT }} BUILD_ATF=1 BUILD_FIP=1 MULTI_LAYOUT=1 FIXED_MTDPARTS=1 build
-            for f in output/*bl2*.img; do cp -f "$f" "/tmp/release/360t7-bl2-${suffix}.img"; done
+            make BOARD=${{ env.TARGET_BOARD }} \
+              VERSION=${{ env.VERSION }} \
+              VARIANT=${{ env.VARIANT }} \
+              BUILD_ATF=1 BUILD_FIP=1 \
+              MULTI_LAYOUT=1 FIXED_MTDPARTS=1 build
+            
+            for img in output/*bl2*.img; do
+              cp -f "$img" "/tmp/release/360t7-bl2-1.${f:1:1}g.img"
+            done
           done
 
       - run: |
@@ -89,5 +106,18 @@ jobs:
       - env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release list --repo "${{ github.repository }}" --limit 100 --json tagName --jq '.[5:][].tagName' | while read -r tag; do [ -n "$tag" ] && gh release delete "$tag" --repo "${{ github.repository }}" --cleanup-tag -y; done
-          gh run list --repo "${{ github.repository }}" --limit 100 --json databaseId --jq '.[5:][].databaseId' | while read -r run_id; do [ -n "$run_id" ] && gh run delete "$run_id" --repo "${{ github.repository }}"; done
+          gh release list \
+            --repo "${{ github.repository }}" \
+            --limit 100 --json tagName --jq '.[5:][].tagName' | \
+          while read -r tag; do
+            [ -n "$tag" ] && gh release delete "$tag" \
+              --repo "${{ github.repository }}" --cleanup-tag -y
+          done
+          
+          gh run list \
+            --repo "${{ github.repository }}" \
+            --limit 100 --json databaseId --jq '.[5:][].databaseId' | \
+          while read -r run_id; do
+            [ -n "$run_id" ] && gh run delete "$run_id" \
+              --repo "${{ github.repository }}"
+          done
