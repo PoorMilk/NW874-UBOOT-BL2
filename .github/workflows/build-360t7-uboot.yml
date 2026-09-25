@@ -1,0 +1,135 @@
+name: Build 360T7 U-Boot & BL2
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 20 * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  UPSTREAM_REPO: Yuzhii0718/bl-mt798x-dhcpd
+  UPSTREAM_BRANCH: master
+  TARGET_BOARD: qihoo_360t7
+  TAG_PREFIX: uboot-bl2
+  VERSION: 2025
+  VARIANT: default
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${{ env.UPSTREAM_REPO }}"
+          git fetch origin
+          git fetch upstream
+          git reset --hard "upstream/${{ env.UPSTREAM_BRANCH }}"
+          
+          git checkout origin/main -- \
+            README.md \
+            .github \
+            uboot-mtk-20250711/configs/mt7981_qihoo_360t7_defconfig || true
+          
+          git add .
+          if ! git diff --staged --quiet; then
+            git commit -m "Sync upstream and preserve custom files"
+            git push -f origin main
+          fi
+
+      - run: |
+          sudo timedatectl set-timezone "$TZ"
+          sudo apt-get update -qq
+          sudo apt-get install -qq -y \
+            gcc-aarch64-linux-gnu build-essential flex bison \
+            libssl-dev device-tree-compiler
+          mkdir -p /tmp/release
+
+      - run: |
+          chmod +x build.sh compile_atf.sh
+          make BOARD=${{ env.TARGET_BOARD }} \
+            VERSION=${{ env.VERSION }} \
+            VARIANT=${{ env.VARIANT }} \
+            BUILD_ATF=1 BUILD_FIP=1 \
+            MULTI_LAYOUT=1 FIXED_MTDPARTS=1 build
+          
+          for f in output/*bl2*.img; do
+            cp -f "$f" "/tmp/release/360t7-bl2-stock.img"
+          done
+          
+          for f in output/*fip*.bin; do
+            cp -f "$f" "/tmp/release/360t7-fip.bin"
+          done
+
+      - run: |
+          git clean -fdx
+          git reset --hard HEAD
+          make -C atf-20250711 \
+            CROSS_COMPILE=aarch64-linux-gnu- PLAT=mt7981 \
+            BOOT_DEVICE=ram DRAM_USE_DDR3=1 bl2
+          
+          cp -f atf-20250711/build/mt7981/release/bl2.bin \
+            /tmp/release/mt7981-uart-ddr3-bl2.bin
+
+      - run: |
+          for f in 1400 1500 1600 1700; do
+            git clean -fdx
+            git reset --hard HEAD
+            
+            sed -i \
+              "1s/^/#undef MT7981_ARMPLL_FREQ_MHZ\n#define MT7981_ARMPLL_FREQ_MHZ ${f}U\n/" \
+              atf-20250711/plat/mediatek/mt7981/drivers/pll/pll.c
+            
+            chmod +x build.sh compile_atf.sh
+            make BOARD=${{ env.TARGET_BOARD }} \
+              VERSION=${{ env.VERSION }} \
+              VARIANT=${{ env.VARIANT }} \
+              BUILD_ATF=1 BUILD_FIP=1 \
+              MULTI_LAYOUT=1 FIXED_MTDPARTS=1 build
+            
+            for img in output/*bl2*.img; do
+              cp -f "$img" "/tmp/release/360t7-bl2-1.${f:1:1}g.img"
+            done
+          done
+
+      - run: |
+          mkdir -p release
+          mv /tmp/release/* release/
+          cd release
+          sha256sum *.img *.bin > sha256sums.txt
+          echo "RELEASE_TAG=${{ env.TAG_PREFIX }}-$(date +'%Y%m%d_%H%M')" >> $GITHUB_ENV
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: 360T7 U-Boot & BL2
+          make_latest: true
+          files: release/*
+
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release list \
+            --repo "${{ github.repository }}" \
+            --limit 100 --json tagName --jq '.[5:][].tagName' | \
+          while read -r tag; do
+            [ -n "$tag" ] && gh release delete "$tag" \
+              --repo "${{ github.repository }}" --cleanup-tag -y
+          done
+          
+          gh run list \
+            --repo "${{ github.repository }}" \
+            --limit 100 --json databaseId --jq '.[5:][].databaseId' | \
+          while read -r run_id; do
+            [ -n "$run_id" ] && gh run delete "$run_id" \
+              --repo "${{ github.repository }}"
+          done
