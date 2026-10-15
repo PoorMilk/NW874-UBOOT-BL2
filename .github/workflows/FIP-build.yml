@@ -67,11 +67,6 @@ on:
         required: false
         default: 'false'
         type: boolean
-      COMPRESS_FIP:
-        description: 'Compress FIP images (XZ)'
-        required: false
-        default: 'false'
-        type: boolean
       BUILD_LOG:
         description: 'Save build output to log file'
         required: false
@@ -120,7 +115,6 @@ env:
   CONFIG_EXTRA_OPTION: ${{ github.event.inputs.EXTRA_OPTION || 'multi_layout' }}
   CONFIG_COPY_BL2: ${{ github.event.inputs.COPY_BL2 || 'true' }}
   CONFIG_SIMG: ${{ github.event.inputs.SIMG || 'false' }}
-  CONFIG_COMPRESS_FIP: ${{ github.event.inputs.COMPRESS_FIP || 'false' }}
   CONFIG_BUILD_LOG: ${{ github.event.inputs.BUILD_LOG || 'true' }}
 
 jobs:
@@ -437,7 +431,6 @@ jobs:
             ;;
         esac
         config_apply "CONFIG_SIMG" "$([ "$CONFIG_SIMG" = "true" ] && echo y || echo n)"
-        config_apply "CONFIG_COMPRESS_FIP" "$([ "$CONFIG_COMPRESS_FIP" = "true" ] && echo y || echo n)"
         config_apply "CONFIG_SILENT" "y"
         config_apply "CONFIG_BUILD_LOG" "$([ "$CONFIG_BUILD_LOG" = "true" ] && echo y || echo n)"
 
@@ -755,9 +748,6 @@ jobs:
         esac
         if [ "$CONFIG_SIMG" = "true" ]; then
           echo "- SIMG packaging enabled" >> release.txt
-        fi
-        if [ "$CONFIG_COMPRESS_FIP" = "true" ]; then
-          echo "- FIP compression (XZ) enabled" >> release.txt
         fi
         if [ "$CONFIG_BUILD_LOG" = "true" ]; then
           echo "- Build log enabled" >> release.txt
